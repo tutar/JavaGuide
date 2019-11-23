@@ -281,6 +281,16 @@ JDK1.2 以后，Java 对引用的概念进行了扩充，将引用分为强引�
 
 根据上面的对分代收集算法的介绍回答。
 
+### 3.5 对比
+
+| 算法      | 优点 | 缺点  |
+| :------: | :------ | :------ | 
+|复制      |吞吐量大（一次能收集整个空间），分配效率高（对象可以连续分配），没有内存碎片|堆的使用效率低（需要额外的一个空间To Space），需要移动对象|
+|标记-清除  |无需移动对象，算法简单 | 内存碎片化，分配慢（需要找到一个合适的空间）|
+|标记-整理  |堆使用率高，无需碎片化 | 暂停时间更长，对缓存不友好（对象移动后顺序关系不存在）|
+|分代      | 组合算法，分配效率高，堆的使用效率高 | 算法复杂|
+
+
 ## 4 垃圾收集器
 
 ![垃圾收集器分类](https://my-blog-to-use.oss-cn-beijing.aliyuncs.com/2019-6/垃圾收集器.jpg)
@@ -386,11 +396,32 @@ G1 收集器的运作大致分为以下几个步骤：
 
 **G1 收集器在后台维护了一个优先列表，每次根据允许的收集时间，优先选择回收价值最大的 Region(这也就是它的名字 Garbage-First 的由来)**。这种使用 Region 划分内存空间以及有优先级的区域回收方式，保证了 GF 收集器在有限时间内可以尽可能高的收集效率（把内存化整为零）。
 
+### 4.8 垃圾收集器组合
+
+**一般垃圾收集器作用不同分代，需要搭配使用，以下是不同收集器的组合方式**
+
+| 新生代GC器 | 新生代GC算法|老年代 | 老年代GC算法|说明|
+| :------: | :------ | :------ | :---|:---|
+|Serial           | 复制算法 | Serial Old | 标记-整理算法 | Serial和Serial Old都是单线程进行GC，特点就是GC时暂停所有应用线程 |
+|Serial           | 复制算法 |CMS+Serial Old| 标记-整理 + 标记-整理  |CMS（Concurrent Mark Sweep）是并发GC，实现GC线程和应用线程并发工作，不需要暂停所有应用线程。另外，当CMS进行GC失败时，会自动使用Serial Old策略进行GC|
+|ParNew           | 复制算法 |  CMS     | 标记-清除算法    |使用-XX:+UseParNewGC选项来开启。ParNew是Serial的并行版本，可以指定GC线程数，默认GC线程数为CPU的数量。可以使用-XX:ParallelGCThreads选项指定GC的线程数。如果指定了选项-XX:+UseConcMarkSweepGC选项，则新生代默认使用ParNew GC策略。
+|ParNew           | 复制算法 |Serial Old| 标记-整理算法     |使用-XX:+UseParNewGC选项来开启。新生代使用ParNew GC策略，年老代默认使用Serial Old GC策略。
+|Parallel Scavenge| 复制算法 |Serial Old| 标记-整理算法     |Parallel Scavenge策略主要是关注一个可控的吞吐量：应用程序运行时间 / (应用程序运行时间 + GC时间)，可见这会使得CPU的利用率尽可能的高，适用于后台持久运行的应用程序，而不适用于交互较多的应用程序。
+|Parallel Scavenge| 复制算法 |Parallel Old| 标记-整理算法   |Parallel Old是Serial Old的并行版本
+|G1GC           |  整体来看是基于“标记整理”算法实现的收集器；从局部上来看是基于“复制”算法实现的 |G1GC| 整体“标记整理”算法，从局部“复制”算法 |-XX:+UnlockExperimentalVMOptions -XX:+UseG1GC        #开启-XX:MaxGCPauseMillis =50                  #暂停时间目标-XX:GCPauseIntervalMillis =200          #暂停间隔目标-XX:+G1YoungGenSize=512m            #年轻代大小-XX:SurvivorRatio=6                            #幸存区比例
+                                                     
+                                                    
+
+![搭配图](https://user-gold-cdn.xitu.io/2017/10/11/430c6ec6bbf2f0c267fcb5a09ac89a72?imageView2/0/w/1280/h/960/format/webp/ignore-error/1)
+
+
+
 ## 参考
 
 - 《深入理解 Java 虚拟机：JVM 高级特性与最佳实践（第二版》
 - https://my.oschina.net/hosee/blog/644618
 - <https://docs.oracle.com/javase/specs/jvms/se8/html/index.html>
+- https://juejin.im/post/59dd7ce8f265da43052d9680#heading-7
 
 ## 公众号
 
