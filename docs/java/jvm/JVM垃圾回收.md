@@ -403,7 +403,7 @@ G1 收集器的运作大致分为以下几个步骤：
 | 新生代GC器 | 新生代GC算法|老年代 | 老年代GC算法|说明|
 | :------: | :------ | :------ | :---|:---|
 |Serial           | 复制算法 | Serial Old | 标记-整理算法 | Serial和Serial Old都是单线程进行GC，特点就是GC时暂停所有应用线程 |
-|Serial           | 复制算法 |CMS+Serial Old| 标记-整理 + 标记-整理  |CMS（Concurrent Mark Sweep）是并发GC，实现GC线程和应用线程并发工作，不需要暂停所有应用线程。另外，当CMS进行GC失败时，会自动使用Serial Old策略进行GC|
+|Serial           | 复制算法 |CMS+Serial Old| 标记-清除 + 标记-整理  |CMS（Concurrent Mark Sweep）是并发GC，实现GC线程和应用线程并发工作，不需要暂停所有应用线程。另外，当CMS进行GC失败时，会自动使用Serial Old策略进行GC|
 |ParNew           | 复制算法 |  CMS     | 标记-清除算法    |使用-XX:+UseParNewGC选项来开启。ParNew是Serial的并行版本，可以指定GC线程数，默认GC线程数为CPU的数量。可以使用-XX:ParallelGCThreads选项指定GC的线程数。如果指定了选项-XX:+UseConcMarkSweepGC选项，则新生代默认使用ParNew GC策略。
 |ParNew           | 复制算法 |Serial Old| 标记-整理算法     |使用-XX:+UseParNewGC选项来开启。新生代使用ParNew GC策略，年老代默认使用Serial Old GC策略。
 |Parallel Scavenge| 复制算法 |Serial Old| 标记-整理算法     |Parallel Scavenge策略主要是关注一个可控的吞吐量：应用程序运行时间 / (应用程序运行时间 + GC时间)，可见这会使得CPU的利用率尽可能的高，适用于后台持久运行的应用程序，而不适用于交互较多的应用程序。

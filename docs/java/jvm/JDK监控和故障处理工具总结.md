@@ -10,6 +10,10 @@
         - [`jmap`:生成堆转储快照](#jmap生成堆转储快照)
         - [**`jhat`**: 分析 heapdump 文件](#jhat-分析-heapdump-文件)
         - [**`jstack`** :生成虚拟机当前时刻的线程快照](#jstack-生成虚拟机当前时刻的线程快照)
+    - [JVM常见问题定位](#JVM常见问题定位)
+        - [CPU飙升定位](#CPU飙升定位)
+        - [线程死锁](#线程死锁)
+        - [OOM内存泄漏](#OOM内存泄漏)
     - [JDK 可视化分析工具](#jdk-可视化分析工具)
         - [JConsole:Java 监视与管理控制台](#jconsolejava-监视与管理控制台)
             - [连接 Jconsole](#连接-jconsole)
@@ -255,6 +259,130 @@ Found 1 deadlock.
 ```
 
 可以看到 `jstack` 命令已经帮我们找到发生死锁的线程的具体信息。
+
+
+## JVM常见问题定位
+
+#### CPU飙升定位
+
+1. 定位最耗CPU进程
+
+```
+[root@localhost~]$ top //进入后按P可对CPU使用率排序
+top - 15:44:48 up 56 days,  4:33,  1 user,  load average: 0.11, 0.07, 0.06
+Tasks: 138 total,   1 running, 137 sleeping,   0 stopped,   0 zombie
+%Cpu0  :  1.0 us,  0.3 sy,  0.0 ni, 98.7 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu1  :  0.7 us,  0.3 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu2  :  1.3 us,  0.3 sy,  0.0 ni, 98.3 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu3  :  0.3 us,  0.0 sy,  0.0 ni, 99.7 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+KiB Mem:  16269468 total, 14987944 used,  1281524 free,  1484048 buffers
+KiB Swap:        0 total,        0 used,        0 free.  5097140 cached Mem
+
+  PID USER      PR  NI    VIRT    RES    SHR S  %CPU %MEM     TIME+ COMMAND                                                                          
+ 1224 nian     20   0 5376920 1.853g   7520 S   1.0 11.9 482:30.30 java                                                                             
+ 1273 root      10 -10  127744   8120   5264 S   0.7  0.0 757:06.42 java         
+```
+
+2.  定位该进程下最耗时线程
+
+```
+[root@localhost~]$ top -Hp 1224 //按P来排序
+top - 15:47:27 up 56 days,  4:35,  1 user,  load average: 0.03, 0.07, 0.05
+Threads: 146 total,   0 running, 146 sleeping,   0 stopped,   0 zombie
+%Cpu0  :  0.7 us,  0.3 sy,  0.0 ni, 99.0 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu1  :  0.3 us,  0.3 sy,  0.0 ni, 99.3 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu2  :  1.3 us,  0.3 sy,  0.0 ni, 98.3 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+%Cpu3  :  1.0 us,  0.3 sy,  0.0 ni, 98.7 id,  0.0 wa,  0.0 hi,  0.0 si,  0.0 st
+KiB Mem:  16269468 total, 14988604 used,  1280864 free,  1484068 buffers
+KiB Swap:        0 total,        0 used,        0 free.  5097576 cached Mem
+
+  PID USER      PR  NI    VIRT    RES    SHR S %CPU %MEM     TIME+ COMMAND                                                                           
+ 1322 vkapp     20   0 5376920 1.853g   7520 S  0.3 11.9  25:52.10 java                                                                              
+ 1609 vkapp     20   0 5376920 1.853g   7520 S  0.3 11.9  48:52.63 java                                                                              
+ 1621 vkapp     20   0 5376920 1.853g   7520 S  0.3 11.9  50:32.59 java                                                                              
+ 1637 vkapp     20   0 5376920 1.853g   7520 S  0.3 11.9  49:07.73 java                                                                              
+ 1224 vkapp     20   0 5376920 1.853g   7520 S  0.0 11.9   0:00.00 java      
+```
+
+3. 线程号转为16进制
+
+```
+[root@localhost~ ~]$ printf "0x%x\n" 1322
+0x52a
+```
+4. 打印线程堆栈，过滤指定线程
+
+```
+[root@localhost~ ~]$ jstack 1224 |grep 0x52a -C5
+	at org.eclipse.jetty.util.thread.ReservedThreadExecutor$ReservedThread.run(ReservedThreadExecutor.java:357)
+	at org.eclipse.jetty.util.thread.QueuedThreadPool.runJob(QueuedThreadPool.java:765)
+	at org.eclipse.jetty.util.thread.QueuedThreadPool$2.run(QueuedThreadPool.java:683)
+	at java.lang.Thread.run(Thread.java:745)
+
+"qtp1791868405-30170" #30170 prio=5 os_prio=0 tid=0x00007f984c01b800 nid=0x52a waiting on condition [0x00007f98ca3ce000]
+   java.lang.Thread.State: TIMED_WAITING (parking)
+	at sun.misc.Unsafe.park(Native Method)
+	- parking to wait for  <0x00000000f8aee850> (a java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject)
+	at java.util.concurrent.locks.LockSupport.parkNanos(LockSupport.java:215)
+	at java.util.concurrent.locks.AbstractQueuedSynchronizer$ConditionObject.await(AbstractQueuedSynchronizer.java:2163)
+```
+***这样即可定位最耗费cpu的代码位置***
+
+
+#### 线程死锁
+
+```
+[root@localhost~]$ jstack -l pid
+```
+![image](https://user-gold-cdn.xitu.io/2017/10/18/6c89d0480551473dbb78c17b46f4b27a?imageView2/0/w/1280/h/960/format/webp/ignore-error/1)
+
+从输出信息可以看到，有一个线程死锁发生，并且指出了那行代码出现的。如此可以快速排查问题。
+
+#### OOM内存泄漏
+***OOM三种情况***
+1. 申请资源（内存）过小，不够用。
+
+**查看新生代，老生代堆内存的分配大小以及使用情况，看是否本身分配过小。**
+```
+jmap -heap 进程ID 
+```
+2. 申请资源太多，没有释放。
+
+- **排查gc，特别是fgc情况下，各个分代内存情况**
+
+```
+jstat -gcutil 进程ID 1000 //每秒输出一次gc的分代内存分配情况，以及gc时间
+```
+
+
+- **查找最费内存的对象，如果某个对象占用空间很大，比如超过了100Mb，应该着重分析，为何没有释放。**
+
+```
+jmap -histo:live 进程ID | more
+
+
+注意：
+//上述执行之后，会造成jvm强制执行一次fgc，在线上不推荐使用，可以采取dump内存快照，线下采用可视化工具进行分析，更加详尽。
+
+jmap -dump:format=b,file=/tmp/dump.dat 进程ID 
+
+//或者采用线上运维工具，自动化处理，方便快速定位，遗失出错时间。
+
+```
+
+3. 申请资源过多，资源耗尽。比如：线程过多，线程内存过大等。
+
+    **确认系统资源是否耗尽**
+
+```
+$ pstree 查看进程线程数量
+$ netstat 查看网络连接数量
+或者采用:
+$ ll /proc/${PID}/fd | wc -l  // 打开的句柄数
+$ ll /proc/${PID}/task | wc -l （效果等同pstree -p | wc -l） //打开的线程数
+
+```
+
 
 ## JDK 可视化分析工具
 
